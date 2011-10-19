@@ -1,6 +1,5 @@
 <?php
 
-
 define('C_G', 'content_grabber');
 define('GRAB_ITEM_IDS', 'item_id');
 define('GRAB_ITEM_DATA', 'item_data');
@@ -10,934 +9,901 @@ define('GRAB_RESET_SAVED_DATA', 2);
 
 /**
  * implementation of hook_menu()
-*/
-function content_grabber_menu(){
-    $items = array();
-    
-    $items['admin/content_grabber'] = array(
-        'title' => t('Захват контента'),
-        'page callback' => 'content_grabber_controller',
-        'page arguments' => array(2),
-        'access arguments' => array('grab content'),
-        'type' => MENU_NORMAL_ITEM,
-    );
-    
-    return $items;
-}
+ */
+function content_grabber_menu() {
+  $items = array();
 
+  $items['admin/content_grabber'] = array(
+    'title' => t('Захват контента'),
+    'page callback' => 'content_grabber_controller',
+    'page arguments' => array(2),
+    'access arguments' => array('grab content'), 'type' => MENU_NORMAL_ITEM,);
+
+  return $items;
+}
 
 /**
  * implementation of hook_help()
-*/
-function content_grabber_help($path){
-    if (preg_match('/admin\/content_grabber/', $path)) {
-        $path_parts = arg();
-        if (count($path_parts) == 2) {
-            // content_grabber plugin's list page
-            
-            return ''; 
-        }
-        else {
-            // plugin form page
-            $module = $path_parts[2];
-            return content_grabber_statistics($module);
-        }
+ */
+function content_grabber_help($path) {
+  if (preg_match('/admin\/content_grabber/', $path)) {
+    $path_parts = arg();
+    if (count($path_parts) == 2) {
+      // content_grabber plugin's list page
+      return '';
     }
+    else {
+      // plugin form page
+      $module = $path_parts[2];
+      return content_grabber_statistics($module);
+    }
+  }
 }
 
-
 /**
- * Collect module statistics 
- * 
+ * Collect module statistics
+ *
  * @param (string) $module
  *  - module name to generate statistics for
  * @return (string) statistics' HTML
  */
-function content_grabber_statistics($module){
-    $output = '';
-    $module_field_values = variable_get($module. '_fields', array());
+function content_grabber_statistics($module) {
+  $output = '';
+  $module_field_values = variable_get($module . '_fields', array());
 
-    // Count stored ID's
-    $ids_table_stats = db_fetch_array(db_query("
-        SELECT COUNT(DISTINCT(item_id)) AS item_id_count, COUNT(DISTINCT(page_id)) AS page_id_count 
-        FROM {content_grabber_ids} 
+  // Count stored ID's
+  $ids_table_stats = db_fetch_array(db_query("
+        SELECT COUNT(DISTINCT(item_id)) AS item_id_count, COUNT(DISTINCT(page_id)) AS page_id_count
+        FROM {content_grabber_ids}
         WHERE module='%s'
     ", $module));
-    
-    $ids_last_page_id = db_result(db_query("
-        SELECT page_id 
-        FROM {content_grabber_ids} 
-        WHERE module='%s' 
-        ORDER BY page_id DESC 
+
+  $ids_last_page_id = db_result(db_query("
+        SELECT page_id
+        FROM {content_grabber_ids}
+        WHERE module='%s'
+        ORDER BY page_id DESC
         LIMIT 0, 1
     ", $module));
-    $count_missed_pages = $ids_last_page_id - $ids_table_stats['page_id_count'];
-    
-    $count_ids_on_page = db_result(db_query("
+  $count_missed_pages = $ids_last_page_id - $ids_table_stats['page_id_count'];
+
+  $count_ids_on_page = db_result(db_query("
         SELECT MAX(cnt)
         FROM (
         	SELECT COUNT(item_id) cnt
         	FROM {content_grabber_ids}
-            WHERE module='%s' 
+            WHERE module='%s'
         	GROUP BY page_id
         ) t1;
     ", $module));
-    
-    $result = db_query("
-        SELECT *, COUNT(item_id) as cnt 
-        FROM {content_grabber_ids} 
-        WHERE module='%s' 
-        GROUP BY page_id 
+
+  $result = db_query("
+        SELECT *, COUNT(item_id) as cnt
+        FROM {content_grabber_ids}
+        WHERE module='%s'
+        GROUP BY page_id
         HAVING ( cnt < %d )
     ", $module, $count_ids_on_page);
-    while ($row = db_fetch_array($result)) {
-        $bad_grabbed_pages[] = $row;
+  while ($row = db_fetch_array($result)) {
+    $bad_grabbed_pages[] = $row;
+  }
+  $count_missed_ids = 0;
+  $bad_grabbed_pages_string = '';
+  foreach ((array )$bad_grabbed_pages as $i => $bad_grabbed_page) {
+    if ($i > 0) {
+      $bad_grabbed_pages_string .= ', ';
     }
-    $count_missed_ids = 0;
-    $bad_grabbed_pages_string = '';
-    foreach ((array)$bad_grabbed_pages as $i => $bad_grabbed_page) {
-        if ($i > 0) $bad_grabbed_pages_string .= ', ';
-        $page_link = l($bad_grabbed_page['page_id'], content_grabber_url($module_field_values[GRAB_ITEM_IDS]['page_url_template'], array('[id]' => $bad_grabbed_page['page_id'])), array('attributes' => array('target' => 'blank')));
-        $bad_grabbed_pages_string .= '<i><strong>'. $page_link .'</i></strong>('. $bad_grabbed_page['cnt'] .'/'. $count_ids_on_page .')';
-        $count_missed_ids += ($count_ids_on_page - $bad_grabbed_page['cnt']);
-    }
-    
-    $items_total = $ids_table_stats['item_id_count'];
-    $pages_total = $ids_table_stats['page_id_count'];
-    $items_per_page = $count_ids_on_page;
-    
-    $list_items[] = 'Всего собрано ID: <i><strong>'. $items_total .'</strong></i> шт. ('. $count_missed_ids .' шт. не удалось сохранить)';
-    $list_items[] = 'Всего обработано страниц: <i><strong>'. $pages_total .'</strong></i> стр. Не обработано: <i><strong>'. $count_missed_pages .'</strong></i> стр.';
-    $list_items[] = 'Номер последней обработанной страницы <i><strong>'. $ids_last_page_id .'</i></strong>';
-    $list_items[] = 'Количество ID на одной странице: <i><strong>'. $items_per_page .'</i></strong> шт.';
-    $list_items[] = 'Номера страниц, которые были обработаны частично: '. ($bad_grabbed_pages_string ? $bad_grabbed_pages_string : '<i><strong>таких нет</i></strong>');
+    $page_link = l($bad_grabbed_page['page_id'], content_grabber_url($module_field_values[GRAB_ITEM_IDS]['page_url_template'], array('[id]' => $bad_grabbed_page['page_id'])), array('attributes' => array('target' => 'blank')));
+    $bad_grabbed_pages_string .= '<i><strong>' . $page_link . '</i></strong>(' . $bad_grabbed_page['cnt'] . '/' . $count_ids_on_page . ')';
+    $count_missed_ids += ($count_ids_on_page - $bad_grabbed_page['cnt']);
+  }
 
-    $output .= '<fieldset class="collapsible">';
-    $output .= '<legend><a href="#">Статистика по захваченным ID</a></legend>';
-    $output .= '<div class="fieldset-wrapper">';
-    if ($list_items) {
-        $output .= '<ul>';
-        foreach ($list_items as $list_item) {
-            $output .= '<li>'. $list_item .'</li>';
-        }
-        $output .= '</ul>';
-    }
-    $output .= '</div>';
-    $output .= '</fieldset>';
+  $items_total = $ids_table_stats['item_id_count'];
+  $pages_total = $ids_table_stats['page_id_count'];
+  $items_per_page = $count_ids_on_page;
 
-    // Сохраняем статистику в БД
-    $stats = variable_get('content_grabber_stats', array());
-    $stats[$module] = compact('items_total', 'pages_total', 'items_per_page');
-    variable_set('content_grabber_stats', $stats);
-    
-    return $output;
+  $list_items[] = 'Всего собрано ID: <i><strong>' . $items_total . '</strong></i> шт. (' . $count_missed_ids . ' шт. не удалось сохранить)';
+  $list_items[] = 'Всего обработано страниц: <i><strong>' . $pages_total . '</strong></i> стр. Не обработано: <i><strong>' . $count_missed_pages .
+    '</strong></i> стр.';
+  $list_items[] = 'Номер последней обработанной страницы <i><strong>' . $ids_last_page_id . '</i></strong>';
+  $list_items[] = 'Количество ID на одной странице: <i><strong>' . $items_per_page . '</i></strong> шт.';
+  $list_items[] = 'Номера страниц, которые были обработаны частично: ' . ($bad_grabbed_pages_string ? $bad_grabbed_pages_string :
+    '<i><strong>таких нет</i></strong>');
+
+  $output .= '<fieldset class="collapsible">';
+  $output .= '<legend><a href="#">Статистика по захваченным ID</a></legend>';
+  $output .= '<div class="fieldset-wrapper">';
+  if ($list_items) {
+    $output .= '<ul>';
+    foreach ($list_items as $list_item) {
+      $output .= '<li>' . $list_item . '</li>';
+    }
+    $output .= '</ul>';
+  }
+  $output .= '</div>';
+  $output .= '</fieldset>';
+
+  // Сохраняем статистику в БД
+  $stats = variable_get('content_grabber_stats', array());
+  $stats[$module] = compact('items_total', 'pages_total', 'items_per_page');
+  variable_set('content_grabber_stats', $stats);
+
+  return $output;
 }
 
-
 /**
- * Insert many ID's or an item ID in DB 
- * 
+ * Insert many ID's or an item ID in DB
+ *
  * @param (int|array) $ids
  *  - item ID
  * @param (int) $page_id
  *  - number of page the item is from
  * @param string $module
  *  - module name the item is related to
- * 
+ *
  * @return void
  */
-function content_grabber_insert_ids($ids, $page_id, $module){
-    $ids = (array) $ids;
-    foreach ($ids as $item_id) {
-        $item_id_count = db_result(db_query("SELECT COUNT(item_id) FROM {content_grabber_ids} WHERE item_id='%s' AND module='%s'", $item_id, $module));
-        if ($item_id_count == 0) {
-            db_query("INSERT INTO {content_grabber_ids} VALUES ('%s', %d, '%s')", $item_id, $page_id, $module);
-        }
+function content_grabber_insert_ids($ids, $page_id, $module) {
+  $ids = (array )$ids;
+  foreach ($ids as $item_id) {
+    $item_id_count = db_result(db_query("SELECT COUNT(item_id) FROM {content_grabber_ids} WHERE item_id='%s' AND module='%s'", $item_id, $module));
+    if ($item_id_count == 0) {
+      db_query("INSERT INTO {content_grabber_ids} VALUES ('%s', %d, '%s')", $item_id, $page_id, $module);
     }
+  }
 }
 
-
 /**
- * Checks whether page was grabbed 
- * 
+ * Checks whether page was grabbed
+ *
  * @param (int) $id
  *  - page id
  * @param (string) $module
  *  - associated module name
  * @param (string) $mode
- *  - grabbing mode 
- * 
+ *  - grabbing mode
+ *
  * @return (int)
  *  - ($mode = GRAB_ITEM_IDS) returns count of page's ids
  *  - ($mode = GRAB_ITEM_DATA) returns count of pages
  */
-function content_grabber_page_was_grabbed($id, $module, $mode = GRAB_ITEM_IDS){
-    $result = FALSE;
-    
-    switch ($mode) {
-        case GRAB_ITEM_IDS:
-            $result = db_result(db_query("SELECT COUNT(DISTINCT(item_id)) FROM {content_grabber_ids} WHERE page_id=%d AND module='%s'", $id, $module));
-        break;
-        
-        case GRAB_ITEM_DATA:
-            $result = db_result(db_query("SELECT COUNT(native_id) FROM {realty_items} WHERE native_id='%s' AND module='%s'", $id, $module));
-        break;
-    }
-    
-    return $result;
-}
+function content_grabber_page_was_grabbed($id, $module, $mode = GRAB_ITEM_IDS) {
+  $result = false;
 
+  switch ($mode) {
+    case GRAB_ITEM_IDS:
+      $result = db_result(db_query("SELECT COUNT(DISTINCT(item_id)) FROM {content_grabber_ids} WHERE page_id=%d AND module='%s'", $id, $module));
+      break;
+    case GRAB_ITEM_DATA:
+      $result = db_result(db_query("SELECT COUNT(native_id) FROM {realty_items} WHERE native_id='%s' AND module='%s'", $id, $module));
+      break;
+  }
+
+  return $result;
+}
 
 /**
  * Create url based on URL template and given arguments
  * @example content_grabber_url('www.example.com?page=[id]', array('[id]' => 1)); // www.example.com?page=1
- * 
+ *
  * @param (string) $template
  * @param (array) $args
- * 
+ *
  * @return (string) url
  */
-function content_grabber_url($template, $args){
-    $search = array_keys($args);
-    $replace = array_values($args);
-    
-    return str_replace($search, $replace, $template);
+function content_grabber_url($template, $args) {
+  $search = array_keys($args);
+  $replace = array_values($args);
+
+  return str_replace($search, $replace, $template);
 }
 
 /**
  * Делает паузу в обработке кода
- * 
+ *
  * @param int $last_request
  *  - время последнего обращения к серверу (в секундах с 1970г)
  * @param int $request_frequency
- *  - минимальное вермя, спустя которое может осуществиться следующий запрос  
+ *  - минимальное вермя, спустя которое может осуществиться следующий запрос
  * @param bool $return
- *  - если TRUE, то пауза НЕ осуществляется   
+ *  - если TRUE, то пауза НЕ осуществляется
  * @return int длительность паузы в секундах
  */
-function content_grabber_sleep($last_request, $request_frequency, $return=FALSE) {
-    $seconds_passed = time() - $last_request;
-    $pause = $request_frequency - $seconds_passed;
-    if ($pause > 0 && !$return) {
-        sleep($pause);
-    }
-    return ($pause >= 0) ? $pause : 0;
+function content_grabber_sleep($last_request, $request_frequency, $return = false) {
+  $seconds_passed = time() - $last_request;
+  $pause = $request_frequency - $seconds_passed;
+  if ($pause > 0 && !$return) {
+    sleep($pause);
+  }
+  return ($pause >= 0) ? $pause : 0;
 }
 
 /**
  * Create array of content_grabber plugin modules
- * 
- * @return (array) module names 
+ *
+ * @return (array) module names
  */
-function content_grabber_plugins(){
-    static $plugins = NULL;
+function content_grabber_plugins() {
+  static $plugins = null;
 
-    if (is_null($plugins)) {
-        $hook = 'content_grabber_plugin';
-    
-        $module_names = module_implements($hook);
-        // Get human names of each plugin
-        foreach ($module_names as $module_name) {
-            $plugins[$module_name] = module_invoke($module_name, $hook);
-        }
+  if (is_null($plugins)) {
+    $hook = 'content_grabber_plugin';
+
+    $module_names = module_implements($hook);
+    // Get human names of each plugin
+    foreach ($module_names as $module_name) {
+      $plugins[$module_name] = module_invoke($module_name, $hook);
     }
-    
-    return $plugins;
+  }
+
+  return $plugins;
 }
 
-
 /**
- * Get plugin human name by module name or inverse 
+ * Get plugin human name by module name or inverse
  * @example content_grabber_plugin_name('plugin_module_name') // Getting plugin human name
  * @example content_grabber_plugin_name('plugin human name', 'module') // Getting plugin module name
- * 
+ *
  * @param (string) $name
  *  - module name or human name
  * @param (string) $type
  *  - (human|module) which of names do you want to get?
- * 
+ *
  * @return (string) name
  */
-function content_grabber_plugin_name($name, $type = 'human'){
-    $plugins = content_grabber_plugins();
-    if ($type == 'module') {
-        $plugins = array_flip($plugins);
-    }
+function content_grabber_plugin_name($name, $type = 'human') {
+  $plugins = content_grabber_plugins();
+  if ($type == 'module') {
+    $plugins = array_flip($plugins);
+  }
 
-    return $plugins[$name];
+  return $plugins[$name];
 }
-
 
 /**
  * Check if module is contenct grabber plugin and is enabled
- * 
+ *
  * @param (string) $module
  *  - module name
- * 
+ *
  * @return (bool)
  */
-function content_grabber_is_plugin($module){
-    return function_exists($module .'_content_grabber_plugin');
+function content_grabber_is_plugin($module) {
+  return function_exists($module . '_content_grabber_plugin');
 }
 
+function content_grabber_controller($module = null) {
+  global $title;
+  if ($module && content_grabber_is_plugin($module)) {
+    $plugin_human_name = content_grabber_plugin_name($module);
+    drupal_set_title(t('Захват контента с %plugin_human_name', array('%plugin_human_name' => $plugin_human_name)));
+    return drupal_get_form('content_grabber_form', $module);
+  }
+  else {
+    $plugins = content_grabber_plugins();
+    if (count($plugins)) {
+      drupal_set_message(t('Выберите сайт с которого хотите произвести захват контента.'));
+      foreach ($plugins as $module_name => $plugin_human_name) {
+        $plugin_links[$module_name] = array('title' => $plugin_human_name, 'href' => 'admin/content_grabber/' . $module_name);
+      }
 
-function content_grabber_controller($module = NULL){
-    global $title;
-    if ($module && content_grabber_is_plugin($module)) {
-        $plugin_human_name = content_grabber_plugin_name($module);
-        drupal_set_title(t('Захват контента с %plugin_human_name', array('%plugin_human_name' => $plugin_human_name)));
-        return drupal_get_form('content_grabber_form', $module);
+      return theme('links', $plugin_links);
     }
     else {
-        $plugins = content_grabber_plugins();
-        if (count($plugins)) {
-            drupal_set_message(t('Выберите сайт с которого хотите произвести захват контента.'));
-            foreach ($plugins as $module_name => $plugin_human_name) {
-                $plugin_links[$module_name] = array( 'title' => $plugin_human_name, 'href' => 'admin/content_grabber/'. $module_name);
-            }
-            
-            return theme('links', $plugin_links);
-        }
-        else {
-            drupal_set_message(t('Ни один плагин не подключен!'), 'error');
-            return '';
-        }
+      drupal_set_message(t('Ни один плагин не подключен!'), 'error');
+      return '';
     }
+  }
 }
 
+function content_grabber_form(&$form_state, $module) {
+  $form = array();
 
-function content_grabber_form(&$form_state, $module){
-    $form = array();
-    
-    /**
-     * Common fields for each of plugins
-    */
-    $common_fields_values = variable_get('content_grabber_fields', array());
-    // Статистика последнего захвата
-    $stats = variable_get('content_grabber_stats', array());
+  /**
+   * Common fields for each of plugins
+   */
+  $common_fields_values = variable_get('content_grabber_fields', array());
+  // Статистика последнего захвата
+  $stats = variable_get('content_grabber_stats', array());
 
-    $form['common'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Общая информация'),
-        '#tree' => TRUE,
-    );
-    $form['common']['grab_mode'] = array(
-        '#type' => 'radios',
-        '#title' => t('Что вы хотите захватить?'),
-        '#default_value' => $common_fields_values['grab_mode'] ? $common_fields_values['grab_mode'] : GRAB_ITEM_IDS,
-        '#options' => array(GRAB_ITEM_IDS => t('ID элементов контента'), GRAB_ITEM_DATA => t('Элементы контента на основании захваченых ID')),
-        '#required' => true,
-    );
-    $form['common']['operation_start_from'] = array(
-        '#type' => 'textfield',
-        '#title' => t('Начинать со страницы номер'),
-        '#description' => t('ID страницы поиска, с которой вы хотите начать захват'),
-        '#default_value' => $common_fields_values['operation_start_from'],
-        '#required' => true,
-        '#size' => 4,
-        '#maxlength' => 4
-    );
-    $pages_total = $common_fields_values['operation_finish_at'] - $common_fields_values['operation_start_from'] + 1;
-    $items_total = '?';
-    if ($stats[$module]['items_per_page'] > 0) {
-        $items_total = $pages_total * $stats[$module]['items_per_page'];
-    }
-    $operations_total = $pages_total;
-    $form['common']['operation_finish_at'] = array(
-        '#type' => 'textfield',
-        '#title' => t('Номер последней обрабатываемой страницы'),
-        '#description' => t('Если вы хотите произвести ПОЛНЫЙ захват контента, введите примерный номер последней страницы. Желательно чтоб это значение было немного больше чем на сайте. Процесс автоматичеки завершится, когда весь контент будет захвачен.'),
-        '#default_value' => $common_fields_values['operation_finish_at'],
-        '#field_suffix' => ' <small>будет обработано страниц:</small> <span style="color: green; font-weight: bold">'. $pages_total .'</span>,  <small>При захвате контента элементов, их будет обработано:</small> <span style="color: green; font-weight: bold">'. $items_total .'</span>,  <small>будет выполнено операций: </small> <span style="color: green; font-weight: bold">'. $operations_total,
-        '#required' => true,
-        '#size' => 5,
-        '#maxlength' => 5
-    );
-    $form['common']['reset_data'] = array(
-        '#type' => 'radios',
-        '#title' => t('Политика относительно уже захваченного контента'),
-        '#default_value' => GRAB_PRESERVE_SAVED_DATA,
-        '#options' => array(
-            GRAB_PRESERVE_SAVED_DATA => t('Захватывать только тот контент, который еще не был захвачен ранее'),
-            GRAB_RESET_RANGE_SAVED_DATA => t('Удалить ранее захваченый контент, но ТОЛЬКО из указанного выше диапазона'),
-            GRAB_RESET_SAVED_DATA => t('Удалить ВЕСЬ ранее захваченый контент и начать захват по новой'),
-        ),
-        '#required' => true,
-    );
+  $form['common'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Общая информация'),
+    '#tree' => true,);
+  $form['common']['grab_mode'] = array(
+    '#type' => 'radios',
+    '#title' => t('Что вы хотите захватить?'),
+    '#default_value' => $common_fields_values['grab_mode'] ? $common_fields_values['grab_mode'] : GRAB_ITEM_IDS,
+    '#options' => array(GRAB_ITEM_IDS => t('ID элементов контента'), GRAB_ITEM_DATA => t('Элементы контента на основании захваченых ID')),
+    '#required' => true,);
+  $form['common']['operation_start_from'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Начинать со страницы номер'),
+    '#description' => t('ID страницы поиска, с которой вы хотите начать захват'),
+    '#default_value' => $common_fields_values['operation_start_from'],
+    '#required' => true,
+    '#size' => 4,
+    '#maxlength' => 4,);
 
+  $pages_total = $common_fields_values['operation_finish_at'] - $common_fields_values['operation_start_from'] + 1;
+  $items_total = '?';
 
-    /**
-     * Plugin's shared fields
-    */ 
-    $form['shared'] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Информация относительно сайта'),
-    );
-    $form['shared'][$module] = array(
-        '#tree' => TRUE,
-    );
-    $form['shared'][$module][GRAB_ITEM_IDS] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Захват ID с сайта'),
-        '#collapsible' => TRUE,
-    );
-    $form['shared'][$module][GRAB_ITEM_DATA] = array(
-        '#type' => 'fieldset',
-        '#title' => t('Захват данных об элементе контента'),
-        '#collapsible' => TRUE,
-    );
+  if ($stats[$module]['items_per_page'] > 0) {
+    $items_total = $pages_total * $stats[$module]['items_per_page'];
+  }
 
-    $form['shared'][$module] = module_invoke($module, 'content_grabber_form', $form['shared'][$module]);
-    $form['module'] = array(
-        '#type' => 'hidden',
-        '#value' => $module,
-        '#required' => true,
-    );
+  $operations_total = $pages_total;
 
-    // content grabber form submit hook
-    $plugin_submit_function = $module .'_content_grabber_form_submit';
+  $form['common']['operation_finish_at'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Номер последней обрабатываемой страницы'),
+    '#description' => t('Если вы хотите произвести ПОЛНЫЙ захват контента, введите примерный номер последней страницы. Желательно чтоб это значение было немного больше чем на сайте. Процесс автоматичеки завершится, когда весь контент будет захвачен.'),
+    '#default_value' => $common_fields_values['operation_finish_at'],
+    '#field_suffix' => ' <small>будет обработано страниц:</small> <span style="color: green; font-weight: bold">' . $pages_total .
+      '</span>,  <small>При захвате контента элементов, их будет обработано:</small> <span style="color: green; font-weight: bold">' . $items_total .
+      '</span>,  <small>будет выполнено операций: </small> <span style="color: green; font-weight: bold">' . $operations_total,
+    '#required' => true,
+    '#size' => 5,
+    '#maxlength' => 5,);
+  $form['common']['reset_data'] = array(
+    '#type' => 'radios',
+    '#title' => t('Политика относительно уже захваченного контента'),
+    '#default_value' => GRAB_PRESERVE_SAVED_DATA,
+    '#options' => array(
+      GRAB_PRESERVE_SAVED_DATA => t('Захватывать только тот контент, который еще не был захвачен ранее'),
+      GRAB_RESET_RANGE_SAVED_DATA => t('Удалить ранее захваченый контент, но ТОЛЬКО из указанного выше диапазона'),
+      GRAB_RESET_SAVED_DATA => t('Удалить ВЕСЬ ранее захваченый контент и начать захват по новой'),),
+    '#required' => true,);
 
-    $form['submit'] = array(
-        '#type' => 'submit',
-        '#value' => t('Сохранить и Начать захват!'),
-        '#submit' => array('content_grabber_form_submit', $plugin_submit_function, 'content_grabber_grab'),
-    );
+  /**
+   * Plugin's shared fields
+   */
+  $form['shared'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Информация относительно сайта'),);
+  $form['shared'][$module] = array(
+    '#tree' => true,);
+  $form['shared'][$module][GRAB_ITEM_IDS] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Захват ID с сайта'),
+    '#collapsible' => true,);
+  $form['shared'][$module][GRAB_ITEM_DATA] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Захват данных об элементе контента'),
+    '#collapsible' => true,);
 
-    $form['save'] = array(
-        '#type' => 'submit',
-        '#value' => t('Только сохранить'),
-        '#submit' => array('content_grabber_form_submit', $plugin_submit_function),
-    );
+  $form['shared'][$module] = module_invoke($module, 'content_grabber_form', $form['shared'][$module]);
+  $form['module'] = array(
+    '#type' => 'hidden',
+    '#value' => $module,
+    '#required' => true,);
 
-    // content grabber hook
-    $form['#submit'][] = $module .'_content_grabber_form_submit';
-    
-    return $form;
+  // content grabber form submit hook
+  $plugin_submit_function = $module . '_content_grabber_form_submit';
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Сохранить и Начать захват!'),
+    '#submit' => array(
+      'content_grabber_form_submit',
+      $plugin_submit_function,
+      'content_grabber_grab'),);
+
+  $form['save'] = array(
+    '#type' => 'submit',
+    '#value' => t('Только сохранить'),
+    '#submit' => array('content_grabber_form_submit', $plugin_submit_function),);
+
+  // content grabber hook
+  $form['#submit'][] = $module . '_content_grabber_form_submit';
+
+  return $form;
 }
-
 
 /**
  * Save grab form common data
  */
-function content_grabber_form_submit($form, &$form_state){
-    variable_set('content_grabber_fields', $form_state['values']['common']);
-    content_grabber_reset_data($form_state['values']['common']['grab_mode'], $form_state['values']['common']['reset_data'], $form_state['values']['module'], $form_state['values']['common']);
+function content_grabber_form_submit($form, &$form_state) {
+  variable_set('content_grabber_fields', $form_state['values']['common']);
+  content_grabber_reset_data($form_state['values']['common']['grab_mode'], $form_state['values']['common']['reset_data'], $form_state['values']['module'],
+    $form_state['values']['common']);
 }
-
 
 /**
  * Delete data from DB based on data type and module relation
- * 
+ *
  * @param (string) $type
  *  - grab mode from grab form
  * @param (int) $mode
  *  - reset data mode
  * @param (string) $module
  *  - relateve module name
- * 
+ *
  * @return void
  */
-function content_grabber_reset_data($type, $mode, $module, $form_common_values = NULL){
-    switch ($type) {
-        case GRAB_ITEM_IDS:
-            switch ($mode) {
-                case GRAB_RESET_RANGE_SAVED_DATA:
-                    if (!is_null($form_common_values)) {
-                        db_query("DELETE FROM {content_grabber_ids} WHERE module='%s' AND page_id>=%d AND page_id<=%d", $module, $form_common_values['operation_start_from'], $form_common_values['operation_finish_at']);
-                    }
-                    else {
-                        drupal_set_message(t('Ошибка! Не удалось удалить диапазон данных.'), 'error');
-                    }
-                break;
+function content_grabber_reset_data($type, $mode, $module, $form_common_values = null) {
+  switch ($type) {
+    case GRAB_ITEM_IDS:
+      switch ($mode) {
+        case GRAB_RESET_RANGE_SAVED_DATA:
+          if (!is_null($form_common_values)) {
+            db_query("DELETE FROM {content_grabber_ids} WHERE module='%s' AND page_id>=%d AND page_id<=%d", $module, $form_common_values['operation_start_from'],
+              $form_common_values['operation_finish_at']);
+          }
+          else {
+            drupal_set_message(t('Ошибка! Не удалось удалить диапазон данных.'), 'error');
+          }
+          break;
 
-                case GRAB_RESET_SAVED_DATA:
-                    db_query("DELETE FROM {content_grabber_ids} WHERE module='%s'", $module);
-                break;
+        case GRAB_RESET_SAVED_DATA:
+          db_query("DELETE FROM {content_grabber_ids} WHERE module='%s'", $module);
+          break;
 
-                default:
-                    return;
-                break;
+        default:
+          return;
+          break;
+      }
+      break;
+
+    case GRAB_ITEM_DATA:
+      switch ($mode) {
+        case GRAB_RESET_RANGE_SAVED_DATA:
+          if (!is_null($form_common_values)) {
+            // Get all item ids from the range of grabbed pages from current module
+            $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE module='%s' AND page_id>=%d AND page_id<=%d", $module, $form_common_values['operation_start_from'],
+              $form_common_values['operation_finish_at']);
+            // Delete all these items from realty database
+            while ($item_id = db_result($result)) {
+              realty_realty_delete($item_id, $module);
             }
-        break;
+            drupal_set_message(t('Диапазон элеменов успешно удален.'));
+          }
+          else {
+            drupal_set_message(t('Ошибка! Не удалось удалить диапазон данных.'), 'error');
+          }
+          break;
 
-        case GRAB_ITEM_DATA:
-            switch ($mode) {
-                case GRAB_RESET_RANGE_SAVED_DATA:
-                    if (!is_null($form_common_values)) {
-                        // Get all item ids from the range of grabbed pages from current module
-                        $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE module='%s' AND page_id>=%d AND page_id<=%d", $module, $form_common_values['operation_start_from'], $form_common_values['operation_finish_at']);
-                        // Delete all these items from realty database
-                        while($item_id = db_result($result)){
-                            realty_realty_delete($item_id, $module);
-                        }
-                        drupal_set_message(t('Диапазон элеменов успешно удален.'));
-                    }
-                    else {
-                        drupal_set_message(t('Ошибка! Не удалось удалить диапазон данных.'), 'error');
-                    }
-                break;
+        case GRAB_RESET_SAVED_DATA:
+          // Get all item ids from current module
+          $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE module='%s'", $module);
+          // Delete all these items from realty database
+          while ($item_id = db_result($result)) {
+            realty_realty_delete($item_id, $module);
+          }
+          drupal_set_message(t('Все элементы, согласно захваченых ID, были удалены.'));
+          break;
 
-                case GRAB_RESET_SAVED_DATA:
-                    // Get all item ids from current module
-                    $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE module='%s'", $module);
-                    // Delete all these items from realty database
-                    while($item_id = db_result($result)){
-                        realty_realty_delete($item_id, $module);
-                    }
-                    drupal_set_message(t('Все элементы, согласно захваченых ID, были удалены.'));
-                break;
+        default:
+          return;
+          break;
+      }
+      break;
+  }
 
-                default:
-                    return;
-                break;
-            }
-        break;
-    }
-    
-    return;
+  return;
 }
 
+function content_grabber_grab($form, &$form_state) {
+  $module = $form_state['values']['module'];
+  $grab_mode = $form_state['values']['common']['grab_mode'];
 
-function content_grabber_grab($form, &$form_state){
-    $module = $form_state['values']['module'];
-    $grab_mode = $form_state['values']['common']['grab_mode'];
+  $_SESSION['proxy_list'] = get_proxy_list(drupal_get_path('module', 'content_grabber') . '/proxy_list.txt');
+  $_SESSION['proxy_index'] = 0;
 
-    $_SESSION['proxy_list'] = get_proxy_list(drupal_get_path('module', 'content_grabber') .'/proxy_list.txt');
-    $_SESSION['proxy_index'] = 0;
+  if ($grab_mode == GRAB_ITEM_IDS) {
+    $batch = array(
+      'operations' => array(),
+      'finished' => 'content_grabber_grab_finished',
+      'title' => t('Захват контента:'),
+      'init_message' => t('Инициализация...'),
+      'progress_message' => t('В процессе кусок @current из @total'),
+      'error_message' => t('An error occurred and some or all of the batch has failed.'),);
+    $batch['operations'][] = array('content_grabber_grab_operation', array($module));
+  }
+  else {
+    $batch = array(
+    'operations' => array(),
+    'finished' => 'content_grabber_grab_finished',
+    'title' => t('Захват контента каждого из элементов:'),
+    'init_message' => t('Инициализация...'),
+    'progress_message' => t('Обработано задач @current из @total'),
+    'error_message' => t('An error occurred and some or all of the batch has failed.'),);
+    $batch['operations'][] = array('content_grabber_grab_item_operation', array($module));
+  }
 
-    if ($grab_mode == GRAB_ITEM_IDS) {
-        $batch = array(
-            'operations' => array(),
-            'finished' => 'content_grabber_grab_finished',
-            'title' => t('Захват контента:'),
-            'init_message' => t('Инициализация...'),
-            'progress_message' => t('В процессе кусок @current из @total'),
-            'error_message' => t('An error occurred and some or all of the batch has failed.'),
-        ); 
-        
-        $batch['operations'][] = array('content_grabber_grab_operation', array($module));
-    }
-    else {
-        $batch = array(
-            'operations' => array(),
-            'finished' => 'content_grabber_grab_finished',
-            'title' => t('Захват контента каждого из элементов:'),
-            'init_message' => t('Инициализация...'),
-            'progress_message' => t('Обработано задач @current из @total'),
-            'error_message' => t('An error occurred and some or all of the batch has failed.'),
-        ); 
-        
-        $batch['operations'][] = array('content_grabber_grab_item_operation', array($module));
-    }
-    
-    batch_set($batch);
+  batch_set($batch);
 }
-
 
 /**
  * Операция по сбору и сохранении информации об элементе
- * 
+ *
  * @param mixed $module
  * @param mixed $context
  * @return void
  */
-function content_grabber_grab_item_operation($module, &$context){
-    // Время начала выполнения операции
-    $context['sandbox']['start_time'] = time();
-    
-    if (!isset($context['sandbox']['progress'])) {
-        /**
-         * Эта чать кода будет выполнена только один раз, при выполнении первой операции.
-        */
-        
-        $common_fields_values = variable_get('content_grabber_fields', array());
-        $context['results']['counters']['items'] = 0; // Счетчик элементов, чей контент удалось захватить
-        $context['results']['counters']['missed_items'] = 0; // Счетчик элементов, чей контент был захвачен ранее
-        $context['results']['counters']['failed_items'] = 0; // Счетчик элементов, которые не удалось захватить
-        $context['sandbox']['module'] = $module; // Имя модуля, который осуществляет захват
-        $context['sandbox']['progress'] = 0; // Общее кол-во обработанных элементов
-        $context['sandbox']['items'] = array(); // Массив значений (ИД элементов), котороые следует обработать
-        
-        // Максимальное время(секунд) на выполнения операции
-        $context['sandbox']['max_time'] = 30;
-        // Время последнего запроса к серверу
-        $context['sandbox']['last_request_time'] = 0;
-        /**
-         * Частота обращений к серверу. Не чаще чем... (по-умолчанию раз в 5 секунд)
-         * Если зпросы будут делатся через прокси, то частота почти максимальна (1).
-         * 
-         * ВАЖНО!!!
-         * Следует учитывать, что логика функции операции построена так, что корректно она бует работать только в том случае,
-         * если время обработки элемента (ВСЁ, кроме загрузки фотографий + паузы) не должно превышать $max_time.
-        */
-        $context['sandbox']['time_per_request'] = count($_SESSION['proxy_list']) ? 1 : 5;
-         
-        // Соберем массив ИД элементов, которые предстоит обработать
-        for ($page_id=$common_fields_values['operation_start_from']; $page_id<=$common_fields_values['operation_finish_at']; $page_id++) {
-            $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE page_id=%d AND module='%s'", $page_id, $context['sandbox']['module']);
-            while ($item_id = db_result($result)) {
-                $context['sandbox']['items'][] = $item_id;
-            }
-        }
+function content_grabber_grab_item_operation($module, &$context) {
+  // Время начала выполнения операции
+  $context['sandbox']['start_time'] = time();
 
-        // Максимльное значение прогресса, при достижении которого захват должен прекратиться 
-        $context['sandbox']['max'] = count($context['sandbox']['items']);
-
-        /**
-         * Позволим под модулю выполнить необходимые для него действия, если такие у него есть.
-         * Подмодуль также может вернуть какие либо данные, которые будут добавлены в контекст.
-         * Так, например, возвращается значение "url_template", которое необходимо для формирования url
-        */ 
-        $altered_sandbox = module_invoke($module, 'grab_operation', 'pre_batch', GRAB_ITEM_DATA);
-        $context['sandbox'] = array_merge($context['sandbox'], $altered_sandbox);
-    }
-    
+  if (!isset($context['sandbox']['progress'])) {
     /**
-     * Body
-    */
-    
-    if ($context['sandbox']['progress'] <= $context['sandbox']['max']) {
-        if (!$context['sandbox']['repeat_count']) {
-            $item_id = array_shift($context['sandbox']['items']);
-            
-            /**
-             * Загружаем содержимое url и захватываем контент, только если 
-             * элемент не был захвачен ранее, или 
-             * Проводится повторная обработка элемента (в этом случае обрабатываются только фотографии)
-            */
-            if (!content_grabber_page_was_grabbed($item_id, $context['sandbox']['module'], GRAB_ITEM_DATA)) {
-                // Формируем url страницы, с которой будет происходить захват
-                $item_url = content_grabber_url($context['sandbox']['url_template'], array('[id]' => $item_id));
-                // Получаем содержимое страницы, используя  соединение через прокси
-                // Запрос к серверу №1
-                // Делаем паузу
-                content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
-                $page_content = page_content_utf8($item_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
-                $context['sandbox']['last_request_time'] = time();
-                // Даем модулю возможность собрать данные с содержимого страницы
-                $item_data = module_invoke($module, 'grab_operation', 'process', GRAB_ITEM_DATA, $page_content, $context['sandbox']);
-                // Подмодуль мог делать запросы к серверу
-                $context['sandbox']['last_request_time'] = time();
-                if ($item_data) {
-                    /**
-                     * Сбор информации прошел удачно, сохраняем объект
-                    */
-                    // Если есть фотографии - назначаем повторную обработку элемента
-                    if (count($item_data['photos'])) {
-                        $context['sandbox']['repeat_count'] = 1;
-                        // Уменьшаем прогресс, чтоб счетчик не считал повторы
-                        $context['sandbox']['progress']--;
-                        // Сохраняем данные в контекст
-                        $context['sandbox']['item_data'] = $item_data;
-                        $context['sandbox']['item_data']['url'] = $item_url;
-                        $message = 'Сохранен элемент: '. l($item_id, $item_url, array('attributes' => array('target' => '_blank'))) .', начинаем загружать его фотографии ';
-                        // Удаляем массив с фотографиями, чтоб при сохранении, функция не начала скачивать их.
-                        // Мы их обработаем позже
-                        unset($item_data['photos']);
-                    }
-                    else { // Нет фотографий у элемента 
-                        // Формируем сообщения для вывода на экран
-                        $message = 'Сохранен элемент: '. l($item_id, $item_url, array('attributes' => array('target' => '_blank')));
-                        // Еще один элемент был обработан 
-                        $context['results']['counters']['items']++;
-                    }
-                    // Сохраняем данные о недвижимости
-                    realty_realty_save($item_data);
-                    // Дополняем информацию ИД номером элемента
-                    $context['sandbox']['item_data']['rid'] = $item_data['rid'];
-                }
-                else {
-                    // Не удалось найти информацию об элемменте на странице
-                    $context['results']['counters']['failed_items']++;
-                    // Формируем сообщения для вывода на экран
-                    $message = 'Не найдена информация об элементе на странице: '. l($item_id, $item_url, array('attributes' => array('target' => '_blank')));
-                }
-            }
-            else {
-                // Элемент был захвачен ранее
-                $context['results']['counters']['missed_pages']++;
-                // Формируем сообщения для вывода на экран
-                $message = 'Пропущен элемент '. l($item_id, $item_url, array('attributes' => array('target' => '_blank'))) .', который был захвачен ранее.';
-            }
+     * Эта чать кода будет выполнена только один раз, при выполнении первой операции.
+     */
+
+    $common_fields_values = variable_get('content_grabber_fields', array());
+    $context['results']['counters']['items'] = 0; // Счетчик элементов, чей контент удалось захватить
+    $context['results']['counters']['missed_items'] = 0; // Счетчик элементов, чей контент был захвачен ранее
+    $context['results']['counters']['failed_items'] = 0; // Счетчик элементов, которые не удалось захватить
+    $context['sandbox']['module'] = $module; // Имя модуля, который осуществляет захват
+    $context['sandbox']['progress'] = 0; // Общее кол-во обработанных элементов
+    $context['sandbox']['items'] = array(); // Массив значений (ИД элементов), котороые следует обработать
+
+    // Максимальное время(секунд) на выполнения операции
+    $context['sandbox']['max_time'] = 30;
+    // Время последнего запроса к серверу
+    $context['sandbox']['last_request_time'] = 0;
+    /**
+     * Частота обращений к серверу. Не чаще чем... (по-умолчанию раз в 5 секунд)
+     * Если зпросы будут делатся через прокси, то частота почти максимальна (1).
+     *
+     * ВАЖНО!!!
+     * Следует учитывать, что логика функции операции построена так, что корректно она бует работать только в том случае,
+     * если время обработки элемента (ВСЁ, кроме загрузки фотографий + паузы) не должно превышать $max_time.
+     */
+    $context['sandbox']['time_per_request'] = count($_SESSION['proxy_list']) ? 1 : 5;
+
+    // Соберем массив ИД элементов, которые предстоит обработать
+    for ($page_id = $common_fields_values['operation_start_from']; $page_id <= $common_fields_values['operation_finish_at']; $page_id++) {
+      $result = db_query("SELECT item_id FROM {content_grabber_ids} WHERE page_id=%d AND module='%s'", $page_id, $context['sandbox']['module']);
+      while ($item_id = db_result($result)) {
+        $context['sandbox']['items'][] = $item_id;
+      }
+    }
+
+    // Максимльное значение прогресса, при достижении которого захват должен прекратиться
+    $context['sandbox']['max'] = count($context['sandbox']['items']);
+
+    /**
+     * Позволим под модулю выполнить необходимые для него действия, если такие у него есть.
+     * Подмодуль также может вернуть какие либо данные, которые будут добавлены в контекст.
+     * Так, например, возвращается значение "url_template", которое необходимо для формирования url
+     */
+    $altered_sandbox = module_invoke($module, 'grab_operation', 'pre_batch', GRAB_ITEM_DATA);
+    $context['sandbox'] = array_merge($context['sandbox'], $altered_sandbox);
+  }
+
+  /**
+   * Body
+   */
+
+  if ($context['sandbox']['progress'] <= $context['sandbox']['max']) {
+    if (!$context['sandbox']['repeat_count']) {
+      $item_id = array_shift($context['sandbox']['items']);
+
+      /**
+       * Загружаем содержимое url и захватываем контент, только если
+       * элемент не был захвачен ранее, или
+       * Проводится повторная обработка элемента (в этом случае обрабатываются только фотографии)
+       */
+      if (!content_grabber_page_was_grabbed($item_id, $context['sandbox']['module'], GRAB_ITEM_DATA)) {
+        // Формируем url страницы, с которой будет происходить захват
+        $item_url = content_grabber_url($context['sandbox']['url_template'], array('[id]' => $item_id));
+        // Получаем содержимое страницы, используя  соединение через прокси
+        // Запрос к серверу №1
+        // Делаем паузу
+        content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
+        $page_content = page_content_utf8($item_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
+        $context['sandbox']['last_request_time'] = time();
+        // Даем модулю возможность собрать данные с содержимого страницы
+        $item_data = module_invoke($module, 'grab_operation', 'process', GRAB_ITEM_DATA, $page_content, $context['sandbox']);
+        // Подмодуль мог делать запросы к серверу
+        $context['sandbox']['last_request_time'] = time();
+        if ($item_data) {
+          /**
+           * Сбор информации прошел удачно, сохраняем объект
+           */
+          // Если есть фотографии - назначаем повторную обработку элемента
+          if (count($item_data['photos'])) {
+            $context['sandbox']['repeat_count'] = 1;
+            // Уменьшаем прогресс, чтоб счетчик не считал повторы
+            $context['sandbox']['progress']--;
+            // Сохраняем данные в контекст
+            $context['sandbox']['item_data'] = $item_data;
+            $context['sandbox']['item_data']['url'] = $item_url;
+            $message = 'Сохранен элемент: ' . l($item_id, $item_url, array('attributes' => array('target' => '_blank'))) . ', начинаем загружать его фотографии ';
+            // Удаляем массив с фотографиями, чтоб при сохранении, функция не начала скачивать их.
+            // Мы их обработаем позже
+            unset($item_data['photos']);
+          }
+          else { // Нет фотографий у элемента
+            // Формируем сообщения для вывода на экран
+            $message = 'Сохранен элемент: ' . l($item_id, $item_url, array('attributes' => array('target' => '_blank')));
+            // Еще один элемент был обработан
+            $context['results']['counters']['items']++;
+          }
+          // Сохраняем данные о недвижимости
+          realty_realty_save($item_data);
+          // Дополняем информацию ИД номером элемента
+          $context['sandbox']['item_data']['rid'] = $item_data['rid'];
         }
         else {
-            /**
-             * Назначена повоторная обработка элемента.
-             * Скачиваем фотографии.
-            */
-            // Пока не все фотки скачаны и у нас есть в запасе хотябы 17 секунд... 
-            $pause = content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request'], TRUE);
-            while ( (time()-$context['sandbox']['start_time']+$pause) <= ($context['sandbox']['max_time']-21) && count($context['sandbox']['item_data']['photos']) ) {
-                $photo_url = array_shift($context['sandbox']['item_data']['photos']);
-                // Запрос к серверу №x
-                // Делаем, паузу если требуется
-                content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
-                // Загружаем и сохраняем фотографию
-                realty_image_copy($photo_url, $context['sandbox']['item_data']['rid'], 'photos', $_SESSION['proxy_list'], $_SESSION['proxy_index']);
-                $context['sandbox']['last_request_time'] = time();
-            }
-            
-            if (count($context['sandbox']['item_data']['photos'])) {
-                // Времени уже в обрез, а фотки еще не все загружены.
-                // Назначаем еще одну повторную обработку элемента
-                $context['sandbox']['repeat_count']++;
-                // Уменьшаем прогресс, чтоб счетчик не считал повторы
-                $context['sandbox']['progress']--;
-                $message = 'Загружаются фотографии элемента: '. l($context['sandbox']['item_data']['native_id'], $context['sandbox']['item_data']['url'], array('attributes' => array('target' => '_blank'))) .' ('. $context['sandbox']['repeat_count'] .')';
-            }
-            else { // Все фотки загружены
-                $context['sandbox']['repeat_count']=0;
-                // Еще один элемент был обработан 
-                $context['results']['counters']['items']++;
-                // Формируем сообщения для вывода на экран
-                $message = 'Элемент '. l($context['sandbox']['item_data']['native_id'], $context['sandbox']['item_data']['url'], array('attributes' => array('target' => '_blank'))) .' сохранен со всеми фотографиями.';
-            }
+          // Не удалось найти информацию об элемменте на странице
+          $context['results']['counters']['failed_items']++;
+          // Формируем сообщения для вывода на экран
+          $message = 'Не найдена информация об элементе на странице: ' . l($item_id, $item_url, array('attributes' => array('target' => '_blank')));
         }
+      }
+      else {
+        // Элемент был захвачен ранее
+        $context['results']['counters']['missed_pages']++;
+        // Формируем сообщения для вывода на экран
+        $message = 'Пропущен элемент ' . l($item_id, $item_url, array('attributes' => array('target' => '_blank'))) . ', который был захвачен ранее.';
+      }
     }
+    else {
+      /**
+       * Назначена повоторная обработка элемента.
+       * Скачиваем фотографии.
+       */
+      // Пока не все фотки скачаны и у нас есть в запасе хотябы 17 секунд...
+      $pause = content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request'], true);
+      while ((time() - $context['sandbox']['start_time'] + $pause) <= ($context['sandbox']['max_time'] - 21) && count($context['sandbox']['item_data']['photos'])) {
+        $photo_url = array_shift($context['sandbox']['item_data']['photos']);
+        // Запрос к серверу №x
+        // Делаем, паузу если требуется
+        content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
+        // Загружаем и сохраняем фотографию
+        realty_image_copy($photo_url, $context['sandbox']['item_data']['rid'], 'photos', $_SESSION['proxy_list'], $_SESSION['proxy_index']);
+        $context['sandbox']['last_request_time'] = time();
+      }
 
-
-    /**
-     * end of Body
-    */
-
-    $context['message'] = "Обработано элементов: {$context['sandbox']['progress']}/{$context['sandbox']['max']}<br />". 
-                            "Всего сохранено элементов: {$context['results']['counters']['items']}<br />".
-                            $message;
-    $context['sandbox']['progress']++;
-    
-    if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
-        $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+      if (count($context['sandbox']['item_data']['photos'])) {
+        // Времени уже в обрез, а фотки еще не все загружены.
+        // Назначаем еще одну повторную обработку элемента
+        $context['sandbox']['repeat_count']++;
+        // Уменьшаем прогресс, чтоб счетчик не считал повторы
+        $context['sandbox']['progress']--;
+        $message = 'Загружаются фотографии элемента: ' . l($context['sandbox']['item_data']['native_id'], $context['sandbox']['item_data']['url'], array('attributes' =>
+          array('target' => '_blank'))) . ' (' . $context['sandbox']['repeat_count'] . ')';
+      }
+      else { // Все фотки загружены
+        $context['sandbox']['repeat_count'] = 0;
+        // Еще один элемент был обработан
+        $context['results']['counters']['items']++;
+        // Формируем сообщения для вывода на экран
+        $message = 'Элемент ' . l($context['sandbox']['item_data']['native_id'], $context['sandbox']['item_data']['url'], array('attributes' => array('target' =>
+          '_blank'))) . ' сохранен со всеми фотографиями.';
+      }
     }
-    
+  }
+
+  /**
+   * end of Body
+   */
+
+  $context['message'] = "Обработано элементов: {$context['sandbox']['progress']}/{$context['sandbox']['max']}<br />" . "Всего сохранено элементов: {$context['results']['counters']['items']}<br />" .
+    $message;
+  $context['sandbox']['progress']++;
+
+  if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+    $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+
 }
 
 /**
  * Операция по сбору ИД элементов со страниц (обычно со страниц поиска)
- * 
+ *
  * @param mixed $module
  * @param mixed $context
  * @return void
  */
-function content_grabber_grab_operation($module, &$context){
-    if (!isset($context['sandbox']['progress'])) {
-        /**
-         * Эта чать кода будет выполнена только один раз, при выполнении первой операции.
-        */
-        
-        $common_fields_values = variable_get('content_grabber_fields', array());
-        $context['results']['counters']['items'] = 0; // Счетчик элементов, чей контент удалось захватить
-        $context['results']['counters']['missed_items'] = 0; // Счетчик элементов, чей контент был захвачен ранее
-        $context['results']['counters']['failed_items'] = 0; // Счетчик элементов, которые не удалось захватить
-        $context['sandbox']['module'] = $module; // Имя модуля, который осуществляет захват
-        $context['sandbox']['progress'] = 0; // Общее кол-во обработанных элементов
-        // Общее кол-во, которые следует обработать
-        $pages_total = $common_fields_values['operation_finish_at'] - $common_fields_values['operation_start_from'] + 1;
-        $context['sandbox']['max'] = $pages_total;
-        $context['sandbox']['id'] = $common_fields_values['operation_start_from']; // ИД страницы, с которой надо начать захват
-        
-        // Максимальное время(секунд) на выполнения операции
-        $context['sandbox']['max_time'] = 30;
-        // Время последнего запроса к серверу
-        $context['sandbox']['last_request_time'] = 0;
-        /**
-         * Частота обращений к серверу. Не чаще чем... (по-умолчанию раз в 5 секунд)
-         * Если зпросы будут делатся через прокси, то частота почти максимальна (1).
-         * 
-         * ВАЖНО!!!
-         * Следует учитывать, что логика функции операции построена так, что корректно она бует работать только в том случае,
-         * если время обработки элемента (ВСЁ, кроме загрузки фотографий + паузы) не должно превышать $max_time.
-        */
-        $context['sandbox']['time_per_request'] = count($_SESSION['proxy_list']) ? 1 : 5;
-
-        $altered_sandbox = module_invoke($module, 'grab_operation', 'pre_batch', GRAB_ITEM_IDS);
-        $context['sandbox'] = array_merge($context['sandbox'], $altered_sandbox);
-    }
-    
+function content_grabber_grab_operation($module, &$context) {
+  if (!isset($context['sandbox']['progress'])) {
     /**
-     * Body
-    */
-    
-    if ($context['sandbox']['id'] <= $context['sandbox']['max']) {
-            
-        $page_id = $context['sandbox']['id'];
-    
-        if (!content_grabber_page_was_grabbed($page_id, $module, GRAB_ITEM_IDS) || $common_fields_values['reset_data']) {
-            // Формируем url страницы, с которой будет происходить захват
-            $page_url = content_grabber_url($context['sandbox']['url_template'], array('[id]' => $page_id));
-            // Получаем содержимое страницы, используя  соединение через прокси
-            content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
-            $page_content = page_content_utf8($page_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
-            $context['sandbox']['last_request_time'] = time();
-            // Даем модулю возможность собрать ИД со страницы
-            $item_ids = module_invoke($module, 'grab_operation', 'process', GRAB_ITEM_IDS, $page_content);
-            // Подмодуль мог делать запросы к серверу
-            $context['sandbox']['last_request_time'] = time();
-            if (count($item_ids)) {
-                // ИД были найдены на странице
-                
-                // Добавляем ИД в БД
-                content_grabber_insert_ids($item_ids, $page_id, $module);
-                $context['results']['counters']['items']++;
-                $message = t('Обработана страница #%page_id.', array('%page_id' => $page_id)) . '<br />Ссылка на страницу: '. 
-                            l($page_url, $page_url, array('attributes' => array('target' => '_blank')));
-            }
-            else {
-                // На странице ничего не было найдено
-                $context['results']['counters']['failed_items']++;
-                $message = 'Страница '. l($page_id, $page_url, array('attributes' => array('target' => '_blank'))) .' не содержит необходимой информации.';
-            }
-        }
-        else {
-            // Страница была обработана ранее
-            $context['results']['counters']['missed_pages']++;
-            $message = 'Страница '. l($page_id, $page_url, array('attributes' => array('target' => '_blank'))) .' была обработана ранее.';
-        }
-        
-    }
+     * Эта чать кода будет выполнена только один раз, при выполнении первой операции.
+     */
 
+    $common_fields_values = variable_get('content_grabber_fields', array());
+    $context['results']['counters']['items'] = 0; // Счетчик элементов, чей контент удалось захватить
+    $context['results']['counters']['missed_items'] = 0; // Счетчик элементов, чей контент был захвачен ранее
+    $context['results']['counters']['failed_items'] = 0; // Счетчик элементов, которые не удалось захватить
+    $context['sandbox']['module'] = $module; // Имя модуля, который осуществляет захват
+    $context['sandbox']['progress'] = 0; // Общее кол-во обработанных элементов
+    // Общее кол-во, которые следует обработать
+    $pages_total = $common_fields_values['operation_finish_at'] - $common_fields_values['operation_start_from'] + 1;
+    $context['sandbox']['max'] = $pages_total;
+    $context['sandbox']['id'] = $common_fields_values['operation_start_from']; // ИД страницы, с которой надо начать захват
+
+    // Максимальное время(секунд) на выполнения операции
+    $context['sandbox']['max_time'] = 30;
+    // Время последнего запроса к серверу
+    $context['sandbox']['last_request_time'] = 0;
     /**
-     * end of Body
-    */
+     * Частота обращений к серверу. Не чаще чем... (по-умолчанию раз в 5 секунд)
+     * Если зпросы будут делатся через прокси, то частота почти максимальна (1).
+     *
+     * ВАЖНО!!!
+     * Следует учитывать, что логика функции операции построена так, что корректно она будет работать только в том случае,
+     * если время обработки элемента (ВСЁ, кроме загрузки фотографий + паузы) не должно превышать $max_time.
+     */
+    $context['sandbox']['time_per_request'] = count($_SESSION['proxy_list']) ? 1 : 5;
 
-    $context['message'] = $message;
-    $context['sandbox']['id']++;
-    $context['sandbox']['progress']++;
-    
-    if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
-        $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-    }
-    
-}
+    $altered_sandbox = module_invoke($module, 'grab_operation', 'pre_batch', GRAB_ITEM_IDS);
+    $context['sandbox'] = array_merge($context['sandbox'], $altered_sandbox);
+  }
 
+  /**
+   * Body
+   */
 
-function content_grabber_grab_finished($success, $results, $operations){
-    $counters = $results['counters'];
-    
-    if ($success) {
-        if ($counters['items'] > 0) {
-            drupal_set_message(t('Захвачено элементов: %grabbed_items шт.', array('%grabbed_items' => $counters['items'])));
-        }
-        if ($counters['failed_items'] > 0) {
-            drupal_set_message(t('Страниц, не содержащих нужной информации: %grabbed_pages шт.', array('%grabbed_pages' => $counters['failed_items'])));
-        }
-        if ($counters['missed_pages'] > 0) {
-            drupal_set_message(t('Страницы обработанные ранее, которые сейчас были пропущены: %missed_pages шт.', array('%missed_pages' => $counters['missed_pages'])));
-        }
+  if ($context['sandbox']['id'] <= $context['sandbox']['max']) {
+
+    $page_id = $context['sandbox']['id'];
+
+    if (!content_grabber_page_was_grabbed($page_id, $module, GRAB_ITEM_IDS) || $common_fields_values['reset_data']) {
+      // Формируем url страницы, с которой будет происходить захват
+      $page_url = content_grabber_url($context['sandbox']['url_template'], array('[id]' => $page_id));
+      // Получаем содержимое страницы, используя  соединение через прокси
+      content_grabber_sleep($context['sandbox']['last_request_time'], $context['sandbox']['time_per_request']);
+      $page_content = page_content_utf8($page_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
+      $context['sandbox']['last_request_time'] = time();
+      // Даем модулю возможность собрать ИД со страницы
+      $item_ids = module_invoke($module, 'grab_operation', 'process', GRAB_ITEM_IDS, $page_content);
+      // Подмодуль мог делать запросы к серверу
+      $context['sandbox']['last_request_time'] = time();
+      if (count($item_ids)) {
+        // ИД были найдены на странице
+
+        // Добавляем ИД в БД
+        content_grabber_insert_ids($item_ids, $page_id, $module);
+        $context['results']['counters']['items']++;
+        $message = t('Обработана страница #%page_id.', array('%page_id' => $page_id)) . '<br />Ссылка на страницу: ' . l($page_url, $page_url, array('attributes' =>
+          array('target' => '_blank')));
+      }
+      else {
+        // На странице ничего не было найдено
+        $context['results']['counters']['failed_items']++;
+        $message = 'Страница ' . l($page_id, $page_url, array('attributes' => array('target' => '_blank'))) . ' не содержит необходимой информации.';
+      }
     }
     else {
-        drupal_set_message(t('Произошла ошибка! Захват контента не полностью прошел успешно.'), 'error');
+      // Страница была обработана ранее
+      $context['results']['counters']['missed_pages']++;
+      $message = 'Страница ' . l($page_id, $page_url, array('attributes' => array('target' => '_blank'))) . ' была обработана ранее.';
     }
-    
-    module_invoke($results['module'], 'content_grabber_grab_finished', $success, $results, $operations);
+
+  }
+
+  /**
+   * end of Body
+   */
+
+  $context['message'] = $message;
+  $context['sandbox']['id']++;
+  $context['sandbox']['progress']++;
+
+  if ($context['sandbox']['progress'] != $context['sandbox']['max']) {
+    $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+
 }
 
+function content_grabber_grab_finished($success, $results, $operations) {
+  $counters = $results['counters'];
+
+  if ($success) {
+    if ($counters['items'] > 0) {
+      drupal_set_message(t('Захвачено элементов: %grabbed_items шт.', array('%grabbed_items' => $counters['items'])));
+    }
+    if ($counters['failed_items'] > 0) {
+      drupal_set_message(t('Страниц, не содержащих нужной информации: %grabbed_pages шт.', array('%grabbed_pages' => $counters['failed_items'])));
+    }
+    if ($counters['missed_pages'] > 0) {
+      drupal_set_message(t('Страницы обработанные ранее, которые сейчас были пропущены: %missed_pages шт.', array('%missed_pages' => $counters['missed_pages'])));
+    }
+  }
+  else {
+    drupal_set_message(t('Произошла ошибка! Захват контента не полностью прошел успешно.'), 'error');
+  }
+
+  module_invoke($results['module'], 'content_grabber_grab_finished', $success, $results, $operations);
+}
 
 /**
  * Get contents and convert it to UTF-8
  * @see file_get_contents()
- * 
+ *
  * @param (string) $filename
  *  - filename or url
  * @return (string) in UTF-8 encoding
-*/
-function file_get_contents_utf8($filename){
-    $content = file_get_contents($filename);
-    if ($content && $http_response_header) {
-        foreach ($http_response_header as $header_row) {
-            if (preg_match("/charset=([^;]+)/", $header_row, $matches)) {
-                $response_charset = $matches[1];
-                break;
-            }
-        }
-        $response_charset = $response_charset ? $response_charset : 'windows-1251';
-        return mb_convert_encoding($content, 'utf-8', $response_charset);
+ */
+function file_get_contents_utf8($filename) {
+  $content = file_get_contents($filename);
+  if ($content && $http_response_header) {
+    foreach ($http_response_header as $header_row) {
+      if (preg_match("/charset=([^;]+)/", $header_row, $matches)) {
+        $response_charset = $matches[1];
+        break;
+      }
     }
-    
-    return '';
+    $response_charset = $response_charset ? $response_charset : 'windows-1251';
+    return mb_convert_encoding($content, 'utf-8', $response_charset);
+  }
+
+  return '';
 }
 
-function page_content_utf8($url, $proxy_list=array(), &$proxy_index=NULL, &$file=NULL) {
-    $curl_options = array(
-        CURLOPT_URL             => $url,
-        CURLOPT_USERAGENT       => "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Trident/4.0)",
-        CURLOPT_HEADER          => 1,
-        CURLOPT_RETURNTRANSFER  => 1,
-        CURLOPT_FOLLOWLOCATION  => 1,
-        CURLOPT_CONNECTTIMEOUT  => 2,
-        CURLOPT_TIMEOUT         => 17,
-        CURLOPT_HTTPHEADER      => array(
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Charset: windows-1251,utf-8;q=0.7,*;q=0.7",
-            "Accept-Language: ru-ru,ru;q=0.8,en-us;q=0.5,en;q=0.3",
-        )
-    );
-    
-    if (count($proxy_list) && !is_null($proxy_index)) {
-        $via_proxy = true;
-        
-        if ($proxy_index >= count($proxy_list)) {
-            $proxy_index = 0;
-        }
-    
-        $proxy_ip = $proxy_list[$proxy_index];
-        $curl_options[CURLOPT_PROXY] = $proxy_ip;
-    }
-    
-    if (!is_null($file)) {
-        $curl_options[CURLOPT_FILE] = $file;
-        $curl_options[CURLOPT_HEADER] = 0;
+function page_content_utf8($url, $proxy_list = array(), &$proxy_index = null, &$file = null) {
+  $curl_options = array(CURLOPT_URL => $url, CURLOPT_USERAGENT => "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Trident/4.0)", CURLOPT_HEADER => 1,
+    CURLOPT_RETURNTRANSFER => 1, CURLOPT_FOLLOWLOCATION => 1, CURLOPT_CONNECTTIMEOUT => 2, CURLOPT_TIMEOUT => 17, CURLOPT_HTTPHEADER => array("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Charset: windows-1251,utf-8;q=0.7,*;q=0.7", "Accept-Language: ru-ru,ru;q=0.8,en-us;q=0.5,en;q=0.3", ));
+
+  if (count($proxy_list) && !is_null($proxy_index)) {
+    $via_proxy = true;
+
+    if ($proxy_index >= count($proxy_list)) {
+      $proxy_index = 0;
     }
 
-    $ch = curl_init();
-    curl_setopt_array($ch, $curl_options);
-    $content = curl_exec($ch);
-    curl_close($ch);
+    $proxy_ip = $proxy_list[$proxy_index];
+    $curl_options[CURLOPT_PROXY] = $proxy_ip;
+  }
 
-    if ($via_proxy) {
-        $proxy_index++;
-    }
+  if (!is_null($file)) {
+    $curl_options[CURLOPT_FILE] = $file;
+    $curl_options[CURLOPT_HEADER] = 0;
+  }
 
-    if ($content && is_null($file)) {
-        if (preg_match_all("/harset=([^\"'\n;,\s]+)/", $content, $matches)) {
-            $response_charset = $matches[1][0];
-        }
-        else {
-            $response_charset = 'windows-1251';
-        }
+  $ch = curl_init();
+  curl_setopt_array($ch, $curl_options);
+  $content = curl_exec($ch);
+  curl_close($ch);
 
-        return (!in_array($response_charset, array('utf-8', 'utf8'))) ? mb_convert_encoding($content, 'utf-8', $response_charset) : $content;
+  if ($via_proxy) {
+    $proxy_index++;
+  }
+
+  if ($content && is_null($file)) {
+    if (preg_match_all("/harset=([^\"'\n;,\s]+)/", $content, $matches)) {
+      $response_charset = $matches[1][0];
     }
     else {
-        /*
-        if ($via_proxy) {
-            return page_content_utf8($url);
-        }
-        else {
-        */
-            return '';
-        //}
+      $response_charset = 'windows-1251';
     }
+
+    return (!in_array($response_charset, array('utf-8', 'utf8'))) ? mb_convert_encoding($content, 'utf-8', $response_charset) : $content;
+  }
+  else {
+    /*
+    if ($via_proxy) {
+    return page_content_utf8($url);
+    }
+    else {
+    */
+    return '';
+    //}
+  }
 }
 
 /**
  * Формирует массив из IP адресов, которые ищет в указаном файле
- * 
+ *
  * @param string $filename
  *  - путь к файлу
  * @return array массив IP адресов
  */
-function get_proxy_list($filename){
-    $proxy_list = array();
-    
-    if (file_exists($filename)) {
-        $content = file_get_contents($filename);
-        if (preg_match_all('/[0-9]{2,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:\:[0-9]{1,5})?/', $content, $matches)) {
-            foreach ($matches[0] as $match) {
-                $proxy_list[] = $match;
-            }
-        }
-    }
-    
-    return $proxy_list;
-}
+function get_proxy_list($filename) {
+  $proxy_list = array();
 
+  if (file_exists($filename)) {
+    $content = file_get_contents($filename);
+    if (preg_match_all('/[0-9]{2,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:\:[0-9]{1,5})?/', $content, $matches)) {
+      foreach ($matches[0] as $match) {
+        $proxy_list[] = $match;
+      }
+    }
+  }
+
+  return $proxy_list;
+}

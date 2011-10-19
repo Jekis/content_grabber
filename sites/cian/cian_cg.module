@@ -1,268 +1,248 @@
 <?php
 
-
 define('CIAN_CG_REGEXP_IDS_FROM_PAGE', '/id="tr_([0-9]+)"/');
-
 
 /**
  * Content grabber hook.
  * Implementation of hook_content_grabber_plugin()
- * 
+ *
  * @return (string) plugin human name
  */
-function cian_cg_content_grabber_plugin(){
-    return 'Циан (cian.ru)';
+function cian_cg_content_grabber_plugin() {
+  return 'Циан (cian.ru)';
 }
-
 
 /**
  * Content grabber hook.
  * Implementation of hook_content_grabber_form()
- * 
+ *
  * @param (array) $form
  *  - drupal form array
- * 
+ *
  * @return TRUE
  */
-function cian_cg_content_grabber_form($form){
-    $values = variable_get('cian_cg_fields', array());
-    $form[GRAB_ITEM_IDS]['#collapsed'] = !empty($values[GRAB_ITEM_IDS]['page_url_template']);
-    $form[GRAB_ITEM_IDS]['page_url_template'] = array(
-        '#type' => 'textarea',
-        '#title' => t('Шаблон ссылки'),
-        '#description' => t('Введите шаблон ссылки, которая ведет на список элементов контента.').' '.t('Изменяемую часть шаблона замените на [id].'),
-        '#default_value' => $values[GRAB_ITEM_IDS]['page_url_template'] ? $values[GRAB_ITEM_IDS]['page_url_template'] : '',
-        '#required' => true,
-    );
-    $form[GRAB_ITEM_IDS]['regexp_ids'] = array(
-        '#type' => 'textfield',
-        '#title' => t('Регулярное выражение для поиска ID на странице'),
-        '#disabled' => TRUE,
-        '#value' => CIAN_CG_REGEXP_IDS_FROM_PAGE,
-    );
-    $form[GRAB_ITEM_DATA]['#collapsed'] = !empty($values[GRAB_ITEM_DATA]['page_url_template']);
-    $form[GRAB_ITEM_DATA]['page_url_template'] = array(
-        '#type' => 'textarea',
-        '#title' => t('Шаблон ссылки'),
-        '#description' => t('Введите шаблон ссылки, которя ведет на страницу элемента контента.').' '.t('Изменяемую часть шаблона замените на [id].'),
-        '#default_value' => $values[GRAB_ITEM_DATA]['page_url_template'] ? $values[GRAB_ITEM_DATA]['page_url_template'] : 'http://www.cian.ru/showphoto.php?id_flat=[id]',
-        '#required' => true,
-    );
-    $form[GRAB_ITEM_DATA]['map_url_template'] = array(
-        '#type' => 'textarea',
-        '#title' => t('Шаблон ссылки'),
-        '#description' => t('Введите шаблон ссылки, которя ведет на страницу с Yandex картой.').' '.t('Изменяемую часть шаблона замените на [id].'),
-        '#default_value' => $values[GRAB_ITEM_DATA]['map_url_template'] ? $values[GRAB_ITEM_DATA]['map_url_template'] : 'http://www.cian.ru/onmap.php?obj=flat&id_obj=[id]',
-    );
-    
-    return $form;
-}
+function cian_cg_content_grabber_form($form) {
+  $values = variable_get('cian_cg_fields', array());
+  $form[GRAB_ITEM_IDS]['#collapsed'] = !empty($values[GRAB_ITEM_IDS]['page_url_template']);
+  $form[GRAB_ITEM_IDS]['page_url_template'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Шаблон ссылки'),
+    '#description' => t('Введите шаблон ссылки, которая ведет на список элементов контента.') . ' ' . t('Изменяемую часть шаблона замените на [id].'),
+    '#default_value' => $values[GRAB_ITEM_IDS]['page_url_template'] ? $values[GRAB_ITEM_IDS]['page_url_template'] : '',
+    '#required' => true,);
+  $form[GRAB_ITEM_IDS]['regexp_ids'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Регулярное выражение для поиска ID на странице'),
+    '#disabled' => true,
+    '#value' => CIAN_CG_REGEXP_IDS_FROM_PAGE,);
+  $form[GRAB_ITEM_DATA]['#collapsed'] = !empty($values[GRAB_ITEM_DATA]['page_url_template']);
+  $form[GRAB_ITEM_DATA]['page_url_template'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Шаблон ссылки'),
+    '#description' => t('Введите шаблон ссылки, которя ведет на страницу элемента контента.') . ' ' . t('Изменяемую часть шаблона замените на [id].'),
+    '#default_value' => $values[GRAB_ITEM_DATA]['page_url_template'] ? $values[GRAB_ITEM_DATA]['page_url_template'] : 'http://www.cian.ru/showphoto.php?id_flat=[id]', '#required' => true,);
+  $form[GRAB_ITEM_DATA]['map_url_template'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Шаблон ссылки'),
+    '#description' => t('Введите шаблон ссылки, которя ведет на страницу с Yandex картой.') . ' ' . t('Изменяемую часть шаблона замените на [id].'),
+    '#default_value' => $values[GRAB_ITEM_DATA]['map_url_template'] ? $values[GRAB_ITEM_DATA]['map_url_template'] : 'http://www.cian.ru/onmap.php?obj=flat&id_obj=[id]', );
 
+  return $form;
+}
 
 /**
  * Content grabber hook.
  * Implementation of hook_content_grabber_form_submit()
  */
-function cian_cg_content_grabber_form_submit($form, &$form_state){
-    variable_set('cian_cg_fields', $form_state['values']['cian_cg']);
+function cian_cg_content_grabber_form_submit($form, &$form_state) {
+  variable_set('cian_cg_fields', $form_state['values']['cian_cg']);
 }
-
 
 /**
  * Content grabber hook.
  * Implementation of hook_grab_operation()
- * 
+ *
  * @param (string) $op
  *  - operation
  * @param (string) $mode
  *  - grab mode
  * @param ... other arguments
- * 
- * @return (mixed) 
- * 
+ *
+ * @return (mixed)
+ *
  */
-function cian_cg_grab_operation($op, $mode, $arg1 = '', $arg2 = ''){
-    static $storage = array();
-    $field_values = variable_get('cian_cg_fields', array());
-    
-    switch ($op) {
-        case 'pre_batch':
-            $sandbox = array(
-                'time_per_request' => 7,
-                'url_template' => $field_values[$mode]['page_url_template'],
-            );
-            return $sandbox;
-        break;
+function cian_cg_grab_operation($op, $mode, $arg1 = '', $arg2 = '') {
+  static $storage = array();
+  $field_values = variable_get('cian_cg_fields', array());
 
-        case 'process':
-            // $arg1 - is page content
-            // $arg2 - is sandbox from batch
-            if ($mode == GRAB_ITEM_IDS) {
-                preg_match_all(CIAN_CG_REGEXP_IDS_FROM_PAGE, $arg1, $matches);
-                return $matches[1];
-            }
-            else {
-                // Делаем, паузу если требуется
-                //content_grabber_sleep($arg2['last_request_time'], $arg2['time_per_request']);
-                return cian_cg_create_realty_item($arg1);
-            }
-        break;
+  switch ($op) {
+    case 'pre_batch':
+      $sandbox = array(
+        'time_per_request' => 7,
+        'url_template' => $field_values[$mode]['page_url_template'],);
+      return $sandbox;
+      break;
 
-        case 'post':
-            
-        break;
-    }
-    
-    return;
+    case 'process':
+      // $arg1 - is page content
+      // $arg2 - is sandbox from batch
+      if ($mode == GRAB_ITEM_IDS) {
+        preg_match_all(CIAN_CG_REGEXP_IDS_FROM_PAGE, $arg1, $matches);
+        return $matches[1];
+      }
+      else {
+        // Делаем, паузу если требуется
+        //content_grabber_sleep($arg2['last_request_time'], $arg2['time_per_request']);
+        return cian_cg_create_realty_item($arg1);
+      }
+      break;
+
+    case 'post':
+
+      break;
+  }
+
+  return;
 }
-
 
 /**
  * Content grabber hook.
  * Implementation of hook_content_grabber_grab_finished()
- * 
+ *
  * @see batch finished_callback arguments
- * 
+ *
  */
-function cian_cg_content_grabber_grab_finished($success, $results, $operations){
+function cian_cg_content_grabber_grab_finished($success, $results, $operations) {
 }
 
+function cian_cg_create_realty_item($html) {
+  static $module_settings = null, $server = null, $patterns = array(
+    'distance' => 'асстояние[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)мин',
+    'distance_method' => 'асстояние[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*[0-9]+мин[.\s\n]+(.+)[\s\n]*<\/big>',
+    'native_id' => 'showphoto\.php\?id_flat=([0-9]+)',
+    'description' => 'писание[\s:]*<\/font>[\s]*<\/b>[\s]*<br>[\s\n]*<big>([^<>]*)<\/big>',
+    'metro' => 'метро[\s:]*<\/font>[\s]*<\/b>[\s]*<big>[\s]*м\.([^<>]+)[\s]*<\/big>',
+    'kitchen_area' => 'кухни[\s:]*<\/font>[\s]*<\/b>[\s]*<big>[\s]*([0-9]+)м',
+    'area_by_rooms' => 'илая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9-+\s]+)[\s\n]*<',
+    'living_area' => 'илая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[\s\n]*<',
+    'floorness' => 'таж[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*[0-9]+[\s\n]*\/[\s\n]*([0-9]+)',
+    'floor' => 'таж[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[\s\n]*\/',
+    'furniture' => 'мебели[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
+    'has_phone' => 'телефона[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
+    'allow_pets' => 'животным[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
+    'allow_children' => 'детьми[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
+    'price' => 'аренды[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*<b>[\s\n]*([0-9,\.]+)р\.',
+    'photos' => '"(\/images\/flat[^"]+.(?:jpg|gif|png))"',
+    'address' => '<h2[^>]*>[^<]+Москва,[\s\n]*([^<]+)',
+    'rooms' => '<h2[^>]*>[\s\n]*([0-9]+)-комн',
+    'area' => 'бщая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[\.0-9]*м',);
 
-function cian_cg_create_realty_item($html){
-    static $module_settings = NULL,
-           $server = NULL,
-           $patterns = array(
-                'distance' => 'асстояние[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)мин',
-                'distance_method' => 'асстояние[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*[0-9]+мин[.\s\n]+(.+)[\s\n]*<\/big>',
-                'native_id' => 'showphoto\.php\?id_flat=([0-9]+)',
-                'description' => 'писание[\s:]*<\/font>[\s]*<\/b>[\s]*<br>[\s\n]*<big>([^<>]*)<\/big>',
-                'metro' => 'метро[\s:]*<\/font>[\s]*<\/b>[\s]*<big>[\s]*м\.([^<>]+)[\s]*<\/big>',
-                'kitchen_area' => 'кухни[\s:]*<\/font>[\s]*<\/b>[\s]*<big>[\s]*([0-9]+)м',
-                'area_by_rooms' => 'илая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9-+\s]+)[\s\n]*<',
-                'living_area' => 'илая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[-+\s]*([0-9]*)[\s\n]*<',
-                'floorness' => 'таж[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*[0-9]+[\s\n]*\/[\s\n]*([0-9]+)',
-                'floor' => 'таж[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[\s\n]*\/',
-                'furniture' => 'мебели[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
-                'has_phone' => 'телефона[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
-                'allow_pets' => 'животным[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
-                'allow_children' => 'детьми[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>(.+)<\/big>',
-                'price' => 'аренды[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*<b>[\s\n]*([0-9,\.]+)р\.',
-                'photos' => '"(\/images\/flat[^"]+.(?:jpg|gif|png))"',
-                'address' => '<h2[^>]*>[^<]+Москва,[\s\n]*([^<]+)',
-                'rooms' => '<h2[^>]*>[\s\n]*([0-9]+)-комн',
-                'area' => 'бщая площадь[\s\n:]+<\/font>[\s\n]*<\/b>[\s\n]*<big>[\s\n]*([0-9]+)[\.0-9]*м',
-           );
-    
-    // определяем имя сервера
-    if (is_null($module_settings)) {
-        // получаем настройки модуля
-        $module_settings = variable_get('cian_cg_fields', array());
-        // из шаблона адреса получаем имя сервера
-        preg_match('/(?:http:\/\/)?([^\/]+)/', $module_settings[GRAB_ITEM_DATA]['page_url_template'], $server_match);
-        $server = $server_match[1];
+  // определяем имя сервера
+  if (is_null($module_settings)) {
+    // получаем настройки модуля
+    $module_settings = variable_get('cian_cg_fields', array());
+    // из шаблона адреса получаем имя сервера
+    preg_match('/(?:http:\/\/)?([^\/]+)/', $module_settings[GRAB_ITEM_DATA]['page_url_template'], $server_match);
+    $server = $server_match[1];
+  }
+
+  // констатные значения
+  $realty = array(
+    'site' => array('name' => 'Циан'),
+    'module' => 'cian_cg',
+    'offer_type' => 'R', // сдача в аренду
+    'type' => 'A', // квартира
+    'city' => array('name' => 'Москва'),
+    'currency' => 'RUR',
+    'status' => 1,
+    'window' => '',
+    'security' => '',
+    'repair' => '',
+    'bedrooms' => 0,
+    'wc' => 0,);
+
+  // Пока не найдено ниодного значения в контенте, считаем что элемент не существует
+  $item_exist = false;
+  foreach ($patterns as $field => $pattern) {
+    if (preg_match_all('/' . $pattern . '/', $html, $matches)) {
+      // Значение поля найдено, элемент существует
+      $item_exist = true;
     }
-    
-    // констатные значения
-    $realty = array(
-        'site' => array('name'=> 'Циан'),
-        'module' => 'cian_cg',
-        'offer_type' => 'R', // сдача в аренду
-        'type' => 'A', // квартира
-        'city' => array('name'=> 'Москва'),
-        'currency' => 'RUR',
-        'status' => 1,
-        'window' => '',
-        'security' => '',
-        'repair' => '',
-        'bedrooms' => 0,
-        'wc' => 0,
-    );
 
-    $item_exist = FALSE; // Пока не найдено ниодного значения в контенте, считаем что элемент не существует
-    foreach ($patterns as $field => $pattern) {
-        if (preg_match_all('/'. $pattern .'/', $html, $matches)) {
-            // Значение поля найдено, элемент существует
-            $item_exist = true;
-        }
-        
-        if (!empty($matches[1][0])) {
-            switch ($field) {
-                case 'distance_method':
-                    $realty[$field] = ($matches[1][0] == 'пешком') ? 'F' : 'T';
-                break;
+    if (!empty($matches[1][0])) {
+      switch ($field) {
+        case 'distance_method':
+          $realty[$field] = ($matches[1][0] == 'пешком') ? 'F' : 'T';
+          break;
 
-                case 'living_area':
-                    /**
-                     * Совпадения состоят из массива площадей комнат,
-                     * поэтому нам надо приплюсовать все площади и получить жилую
-                    */
-                    $living_area = 0;
-                    if (is_numeric($matches[1][0])) {
-                        foreach ($matches as $match) {
-                            if (is_numeric($match[0])) {
-                                $living_area += intval($match[0]);
-                            }
-                        }
-                    }
-                    $realty[$field] = $living_area;
-                break;
-
-                case 'price':
-                    $realty[$field] = str_replace(array('.', ','), '', $matches[1][0]);
-                break;
-
-                case 'photos':
-                    foreach ($matches[1] as $k => $src) {
-                        if (preg_match('/^\//', $src)) {
-                            $matches[1][$k] = 'http://'. $server . $src;
-                        }
-                    }
-                    $realty[$field] = array_slice(array_unique($matches[1]), 0, 5); // оставляем ТОЛЬКО 10 уникальных url на фотографии
-                break;
-                
-                case 'metro':
-                    $realty[$field] = array('name' => $matches[1][0]);
-                break;
-                
-                default:
-                    $realty[$field] = $matches[1][0];
-                break;
+        case 'living_area':
+          /**
+           * Совпадения состоят из массива площадей комнат,
+           * поэтому нам надо приплюсовать все площади и получить жилую
+           */
+          $living_area = 0;
+          if (is_numeric($matches[1][0])) {
+            foreach ($matches as $match) {
+              if (is_numeric($match[0])) {
+                $living_area += intval($match[0]);
+              }
             }
-        }
-    }
-    
-    if ($item_exist) {
-        
-        // Информация о координатах (карта)
-        $map_page_url = content_grabber_url($module_settings[GRAB_ITEM_DATA]['map_url_template'], array('[id]'=>$realty['native_id']));
-        //$map_html = page_content_utf8($map_page_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
+          }
+          $realty[$field] = $living_area;
+          break;
 
-        $map_patterns = array(
-            'coordinates' => 'var[\s]+point[\s]+=[\s]+new[\s]+YMaps\.GeoPoint\(([0-9\.]+),[\s]*([0-9\.]+)\);',
-            'metro_coordinates' => '\[new[\s]+YMaps\.GeoPoint\(([0-9\.]+),[\s]*([0-9\.]+)\),[\s]+new',
-        );
+        case 'price':
+          $realty[$field] = str_replace(array('.', ','), '', $matches[1][0]);
+          break;
 
-        foreach ($map_patterns as $field => $pattern) {
-            preg_match_all('/'. $pattern .'/', $map_html, $matches);
-            if (count($matches) == 3) {
-                $coords = array(
-                    'x' => $matches[1][0],
-                    'y' => $matches[2][0],
-                );
-                switch ($field) {
-                    case 'metro_coordinates':
-                        $realty['metro']['coordinates'] = $coords;
-                    break;
-
-                    default:
-                        $realty[$field] = $coords;
-                    break;
-                }
+        case 'photos':
+          foreach ($matches[1] as $k => $src) {
+            if (preg_match('/^\//', $src)) {
+              $matches[1][$k] = 'http://' . $server . $src;
             }
-        }
+          }
+          $realty[$field] = array_slice(array_unique($matches[1]), 0, 5); // оставляем ТОЛЬКО 10 уникальных url на фотографии
+          break;
 
-        return $realty;
+        case 'metro':
+          $realty[$field] = array('name' => $matches[1][0]);
+          break;
+
+        default:
+          $realty[$field] = $matches[1][0];
+          break;
+      }
     }
-    
-    return false;
+  }
+
+  if ($item_exist) {
+
+    // Информация о координатах (карта)
+    $map_page_url = content_grabber_url($module_settings[GRAB_ITEM_DATA]['map_url_template'], array('[id]' => $realty['native_id']));
+    //$map_html = page_content_utf8($map_page_url, $_SESSION['proxy_list'], $_SESSION['proxy_index']);
+
+    $map_patterns = array(
+      'coordinates' => 'var[\s]+point[\s]+=[\s]+new[\s]+YMaps\.GeoPoint\(([0-9\.]+),[\s]*([0-9\.]+)\);',
+      'metro_coordinates' => '\[new[\s]+YMaps\.GeoPoint\(([0-9\.]+),[\s]*([0-9\.]+)\),[\s]+new',);
+
+    foreach ($map_patterns as $field => $pattern) {
+      preg_match_all('/' . $pattern . '/', $map_html, $matches);
+      if (count($matches) == 3) {
+        $coords = array('x' => $matches[1][0], 'y' => $matches[2][0], );
+        switch ($field) {
+          case 'metro_coordinates':
+            $realty['metro']['coordinates'] = $coords;
+            break;
+
+          default:
+            $realty[$field] = $coords;
+            break;
+        }
+      }
+    }
+
+    return $realty;
+  }
+
+  return false;
 }
