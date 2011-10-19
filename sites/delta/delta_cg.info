@@ -1,0 +1,6 @@
+name = "Delta"
+description = "Content grabber plugin for site Delta www.emcn.ru"
+version = "6.x-0.1"
+dependencies[] = content_grabber
+core = "6.x"
+package = Content grabber

@@ -1,0 +1,201 @@
+<?php
+
+
+define('DELTA_CG_REGEXP_IDS_FROM_PAGE', "/<b><a[^>]*>[^0-9]* ([0-9]+)<\/a><\/b>/");
+
+
+/**
+ * Content grabber hook.
+ * Implementation of hook_content_grabber_plugin()
+ * 
+ * @return (string) plugin human name
+ */
+function delta_cg_content_grabber_plugin(){
+    return 'Delta (emcn.ru)';
+}
+
+
+/**
+ * Content grabber hook.
+ * Implementation of hook_content_grabber_form()
+ * 
+ * @param (array) $form
+ *  - drupal form array
+ * 
+ * @return TRUE
+ */
+function delta_cg_content_grabber_form($form){
+    $values = variable_get('delta_cg_fields', array());
+    $form[GRAB_ITEM_IDS]['#collapsed'] = !empty($values[GRAB_ITEM_IDS]['page_url_template']);
+    $form[GRAB_ITEM_IDS]['page_url_template'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Шаблон ссылки'),
+        '#description' => t('Введите шаблон ссылки, которая ведет на список элементов контента'),
+        '#default_value' => $values[GRAB_ITEM_IDS]['page_url_template'] ? $values[GRAB_ITEM_IDS]['page_url_template'] : 'http://emcn.ru/search/1f476db3b1514d41/?page=[id]',
+        '#required' => true,
+    );
+    $form[GRAB_ITEM_IDS]['regexp_ids'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Регулярное выражение для поиска ID на странице'),
+        '#disabled' => TRUE,
+        '#value' => DELTA_CG_REGEXP_IDS_FROM_PAGE,
+    );
+    $form[GRAB_ITEM_DATA]['#collapsed'] = !empty($values[GRAB_ITEM_DATA]['page_url_template']);
+    $form[GRAB_ITEM_DATA]['page_url_template'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Шаблон ссылки'),
+        '#description' => t('Введите шаблон ссылки, которя ведет на страницу элемента контента'),
+        '#default_value' => $values[GRAB_ITEM_DATA]['page_url_template'] ? $values[GRAB_ITEM_DATA]['page_url_template'] : 'http://emcn.ru/offers/[id].html',
+        '#required' => true,
+    );
+    
+    return $form;
+}
+
+
+/**
+ * Content grabber hook.
+ * Implementation of hook_content_grabber_form_submit()
+ */
+function delta_cg_content_grabber_form_submit($form, &$form_state){
+    variable_set('delta_cg_fields', $form_state['values']['delta_cg']);
+}
+
+
+/**
+ * Content grabber hook.
+ * Implementation of hook_grab_operation()
+ * 
+ * @param (string) $op
+ *  - operation
+ * @param (string) $mode
+ *  - grab mode
+ * @param ... other arguments
+ * 
+ * @return (mixed) 
+ * 
+ */
+function delta_cg_grab_operation($op, $mode, $arg1 = '', $arg2 = ''){
+    static $storage = array();
+    $field_values = variable_get('delta_cg_fields', array());
+    
+    switch ($op) {
+        case 'pre_batch':
+            $sandbox = array(
+                'time_per_request' => 2,
+                'url_template' => $field_values[$mode]['page_url_template'],
+            );
+            return $sandbox;
+        break;
+
+        case 'process':
+            // $arg1 - is page content
+            if ($mode == GRAB_ITEM_IDS) {
+                preg_match_all(DELTA_CG_REGEXP_IDS_FROM_PAGE, $arg1, $matches);
+                return $matches[1];
+            }
+            else {
+                return delta_cg_create_realty_item($arg1);
+            }
+        break;
+
+        case 'post':
+            
+        break;
+    }
+    
+    return;
+}
+
+
+/**
+ * Content grabber hook.
+ * Implementation of hook_content_grabber_grab_finished()
+ * 
+ * @see batch finished_callback arguments
+ * 
+ */
+function delta_cg_content_grabber_grab_finished($success, $results, $operations){
+}
+
+
+function delta_cg_create_realty_item($html){
+    static $module_settings = NULL,
+           $server = NULL,
+           $patterns = array(
+                'native_id' => 'big blue">№\s*([0-9]+)',
+                'description' => 'писание:[^p]*<p>([^<>]*)',
+                'metro' => 'icon"\/>\s*([^<\n]+)',
+                'address' => 'дрес:<\/b>\s*([^<]+)',
+                'yandex_static_map' => '<img[^src="]*src="([^"]+static-maps.yandex.ru[^"]+)"[^>]+>',
+                'distance' => 'даленность:<\/b>[^0-9]*([0-9]+)',
+                'floorness' => 'тажность[:\s]*<\/b>\s*([0-9]+)',
+                'floor' => 'таж[:\s]*<\/b>\s*([0-9]+)',
+                'window' => 'из окон:<\/b>\s*([^<]+)',
+                'security' => 'храна:<\/b>\s*([^<]+)',
+                'rooms' => 'омнат[\/\s]+Спален\s*<\/b>:\s*([0-9]+)[\s\/]*[0-9]+',
+                'bedrooms' => 'омнат[\/\s]+Спален\s*<\/b>:\s*[0-9]+[\s\/]*([0-9]+)',
+                'area' => 'бщая площадь[:\s]+<\/b>\s*([0-9]+)',
+                'area_by_rooms' => 'комнатам:<\/b>\s*([^<]+)',
+                'wc' => 'анузлов[:\s]*<\/b>\s*([0-9]+)',
+                'repair' => 'емонт:<\/b>\s*([^<]+)',
+                'furniture' => 'ебель:<\/b>\s*([^<]+)',
+                'photos' => '"([^"]+maxi.(?:jpg|gif|png))"',
+                'price' => 'big blue">([0-9]+)\s*руб',
+           );
+    
+    // определяем имя сервера
+    if (is_null($module_settings)) {
+        // получаем настройки модуля
+        $module_settings = variable_get('delta_cg_fields', array());
+        // из шаблона адреса получаем имя сервера
+        preg_match('/(?:http:\/\/)?([^\/]+)/', $module_settings[GRAB_ITEM_DATA]['page_url_template'], $server_match);
+        $server = $server_match[1];
+        //$server = 'emcn.ru';
+    }
+    
+    // констатные значения
+    $realty = array(
+        'site' => array('name'=> 'Delta'),
+        'module' => 'delta_cg',
+        'offer_type' => 'R', // сдача в аренду
+        'type' => 'A', // квартира
+        'city' => array('name'=> 'Москва'),
+        'currency' => 'RUR',
+        'status' => 1,
+        'living_area' => 0,
+        'kitchen_area' => 0,
+        'distance_method' => 'F', // пешком
+    );
+
+    $item_exist = FALSE; // Пока не найдено ниодного значения в контенте, считаем что элемент не существует
+    foreach ($patterns as $field => $pattern) {
+        if (preg_match_all('/'. $pattern .'/', $html, $matches)) {
+            // Значение поля найдено, элемент существует
+            $item_exist = true;
+        }
+        
+        if (!empty($matches[1][0])) {
+            switch ($field) {
+                case 'photos':
+                    foreach ($matches[1] as $k => $src) {
+                        if (preg_match('/^\//', $src)) {
+                            $matches[1][$k] = 'http://'. $server . $src;
+                        }
+                    }
+                    $realty[$field] = array_unique($matches[1]);
+                break;
+                
+                case 'metro':
+                    $realty[$field] = array('name' => $matches[1][0]);
+                break;
+                
+                default:
+                    $realty[$field] = $matches[1][0];
+                break;
+            }
+        }
+    }
+    
+    return $item_exist ? $realty : false;
+}

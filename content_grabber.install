@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * Implementation of hook_install().
+ */
+function content_grabber_install() {
+    drupal_install_schema('content_grabber');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function content_grabber_uninstall() {
+  drupal_uninstall_schema('content_grabber');
+}
+
+
+/**
+ * Implementation of hook_schema().
+ */
+function content_grabber_schema() {
+    $schema['content_grabber_ids'] = array(
+        'description' => "Grabbed item's IDs",
+        'fields' => array(
+            'item_id' => array(
+                'type' => 'int',
+                'size' => 'medium',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+            ),
+            'page_id' => array(
+                'type' => 'int',
+                'size' => 'small',
+                'length' => '4',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+                'description' => 'Page number the item was from'
+            ),
+            'module' => array(
+                'type' => 'varchar',
+                'length' => '50',
+                'not null' => TRUE,
+                'description' => 'Module related item',
+            ),
+        ),
+    );
+    
+    return $schema;
+}

@@ -1,0 +1,5 @@
+name = "Cian"
+description = "Плагин для захвата контента с сайта cian.ru"
+dependencies[] = content_grabber
+core = "6.x"
+package = Content grabber

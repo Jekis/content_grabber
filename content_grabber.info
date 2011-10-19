@@ -1,0 +1,5 @@
+name = "Content grabber"
+description = "You can grab products information from site content and create your own table with produts based on grabbed items."
+version = "6.x-0.1"
+core = "6.x"
+package = Content grabber
